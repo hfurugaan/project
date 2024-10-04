@@ -1,0 +1,342 @@
+# %%
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import seaborn as sns
+import warnings
+import statsmodels.api as sm
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import train_test_split,GridSearchCV
+from sklearn.decomposition import PCA
+from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree  import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import tree
+from sklearn import svm
+from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
+from sklearn import metrics
+from sklearn.metrics import confusion_matrix
+# from sklearn.metrics import plot_roc_curve # has been decrated
+from sklearn.metrics import RocCurveDisplay
+from sklearn.model_selection import GridSearchCV
+from mlxtend.plotting import plot_confusion_matrix
+import pickle
+
+# %%
+# ignore warnings
+warnings.filterwarnings('ignore')
+
+# %%
+Columns = ['duration','protocol_type','service','flag','src_bytes','dst_bytes','land','wrong_fragment','urgent','hot',
+            'num_failed_logins','logged_in','num_compromised','root_shell','su_attempted','num_root','num_file_creations',
+            'num_shells','num_access_files','num_outbound_cmds','is_host_login','is_guest_login','count','srv_count',
+            'serror_rate','srv_serror_rate','rerror_rate','srv_rerror_rate','same_srv_rate','diff_srv_rate','srv_diff_host_rate',
+            'dst_host_count','dst_host_srv_count','dst_host_same_srv_rate','dst_host_diff_srv_rate','dst_host_same_src_port_rate',
+            'dst_host_srv_diff_host_rate','dst_host_serror_rate','dst_host_srv_serror_rate','dst_host_rerror_rate',
+            'dst_host_srv_rerror_rate','attack','level']
+
+# %%
+train_df = pd.read_csv("nsl-kdd-data/KDDTrain+.txt" , sep = "," , encoding = 'utf-8', names = Columns)
+test_df  = pd.read_csv("nsl-kdd-data/KDDTest+.txt" , sep = "," , encoding = 'utf-8', names = Columns)
+
+# %%
+train_df.head(10)
+
+# %%
+train_df.info()
+
+# %%
+test_df.info()
+
+# %%
+train_df.describe()
+
+# %%
+test_df.describe()
+
+# %%
+train_df.nunique()
+
+# %%
+test_df.nunique()
+
+# %%
+train_df.max()
+
+# %%
+test_df.max()
+
+# %%
+# Assuming 'train_df' contains NSL-KDD dataset
+# If the 'attack' column is categorical, we want to encode it, but for now, we assume in usable form.
+
+# Create a larger and clearer figure
+plt.figure(figsize=(16, 8))
+
+# Distribution of the 'attack' variable in the NSL-KDD dataset
+sns.countplot(x='attack', data=train_df, palette='viridis')
+
+# Set title and labels
+plt.title('Distribution of Attack Types', fontsize=25)
+plt.xlabel('Attack_Type', fontsize=21)
+plt.ylabel('Total', fontsize=21)
+
+# Increase the font size of x-axis tick labels
+plt.xticks(rotation=45, fontsize=14)  # Rotating to prevent label overlap if there are many classes
+
+# Format y-axis labels with commas
+ax = plt.gca()  # Get current axis
+ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: f'{int(x):,}'))
+
+# Show the plot
+plt.show()
+
+# %%
+def get_unique_values(dataframe, fields):
+    ''' 
+    get the unique values and their total from the given dataframe
+    '''
+    for names in fields:
+        print(f"Field: {names}\n{'-'*30}")
+        # Extract unique values and their counts
+        unique_vals = dataframe[names].unique()
+        value_counts = dataframe[names].value_counts()
+        # Print the unique values and their counts
+        print(f"Unique Values ({len(unique_vals)}): {unique_vals}\n")
+        print(f"Value Totals:\n{value_counts}\n{'='*40}\n")
+
+# Select categorical features (object type) in the NSL-KDD dataset
+categorical_features = train_df.select_dtypes(include='object').columns
+
+# Let's print the unique values and the totals for categorical features
+get_unique_values(train_df, categorical_features)
+
+# %%
+Results = set(train_df['attack'].values)
+print(Results)
+
+# %%
+# classify the attacks
+
+Trained_attack = train_df.attack.map(lambda a: 0 if a == 'normal' else 1)
+Tested_attack = test_df.attack.map(lambda a: 0 if a == 'normal' else 1)
+
+train_df['attack_state'] = Trained_attack
+test_df['attack_state'] = Tested_attack
+
+# %%
+train_df.head(10)
+
+# %%
+test_df.head(10)
+
+# %%
+# Checking for Missing Data
+print(train_df.isnull().sum())
+
+# %%
+print(test_df.isnull().sum())
+
+# %%
+# Checking for Duplicates
+print(train_df.duplicated().sum())
+print(test_df.duplicated().sum())
+
+# %%
+train_df.shape
+
+# %%
+train_df.plot(kind='box', subplots=True, layout=(8,5), figsize=(20,40))
+plt.show()
+
+# %%
+test_df.shape
+
+# %%
+test_df.plot(kind='box',subplots=True, layout=(8,5),figsize=(20,40))
+plt.show()
+
+# %%
+# One hot Encoding
+train_df = pd.get_dummies(train_df,columns=['protocol_type','service','flag'], prefix="", prefix_sep="")
+test_df = pd.get_dummies(test_df,columns=['protocol_type','service','flag'],prefix="",prefix_sep="")
+
+# %%
+LE = LabelEncoder()
+attack_LE= LabelEncoder()
+train_df['attack'] = attack_LE.fit_transform(train_df["attack"])
+test_df['attack'] = attack_LE.fit_transform(test_df["attack"])
+
+# %%
+# Data Splitting
+X_train = train_df.drop('attack', axis = 1)
+X_train = train_df.drop('level', axis = 1)
+X_train = train_df.drop('attack_state', axis = 1)
+
+X_test = test_df.drop('attack', axis = 1)
+X_test = test_df.drop('level', axis = 1)
+X_test = test_df.drop('attack_state', axis = 1)
+
+
+Y_train = train_df['attack_state']
+Y_test = test_df['attack_state']
+
+# %%
+X_train_train, X_test_train, Y_train_train, Y_test_train = train_test_split(X_train, Y_train, test_size= 0.25 , random_state=42)
+X_train_test, X_test_test, Y_train_test, Y_test_test = train_test_split(X_test, Y_test, test_size= 0.25 , random_state=42)
+
+# %%
+# Data scaling
+Ro_scaler = RobustScaler()
+X_train_train = Ro_scaler.fit_transform(X_train_train) 
+X_test_train= Ro_scaler.transform(X_test_train)
+X_train_test = Ro_scaler.fit_transform(X_train_test) 
+X_test_test= Ro_scaler.transform(X_test_test)
+
+# %%
+X_train_train.shape, Y_train_train.shape
+
+# %%
+X_test_train.shape, Y_test_train.shape
+
+# %%
+X_train_test.shape, Y_train_test.shape
+
+# %%
+X_test_test.shape, Y_test_test.shape
+
+# %%
+# Convert all boolean columns to integers (0 and 1)
+X_train = X_train.astype(int)
+X_test = X_test.astype(int)
+
+# %%
+A = sm.add_constant(X_train)
+Est1 = sm.GLM(Y_train, A)
+Est2 = Est1.fit()
+Est2.summary()
+
+# %%
+# Evaluation Function
+# Evaluation Function
+def Evaluate(Model_Name, Model_Abb, X_test, Y_test):
+    
+    Pred_Value = Model_Abb.predict(X_test)
+    Accuracy = metrics.accuracy_score(Y_test, Pred_Value)                      
+    Sensitivity = metrics.recall_score(Y_test, Pred_Value)
+    Precision = metrics.precision_score(Y_test, Pred_Value)
+    F1_score = metrics.f1_score(Y_test, Pred_Value)
+    Recall = metrics.recall_score(Y_test, Pred_Value)
+    
+    print(f"""
+          ==================================================
+          The {Model_Name} Model Accuracy   =  {np.round(Accuracy, 3)}
+          The {Model_Name} Model Sensitivity =  {np.round(Sensitivity, 3)}
+          The {Model_Name} Model Precision   =  {np.round(Precision, 3)}
+          The {Model_Name} Model F1 Score    =  {np.round(F1_score, 3)}
+          The {Model_Name} Model Recall      =  {np.round(Recall, 3)}
+          ==================================================
+          """)
+    
+    # Confusion matrix
+    Confusion_Matrix = metrics.confusion_matrix(Y_test, Pred_Value)
+    plot_confusion_matrix(Confusion_Matrix, class_names=['Normal', 'Attack'], figsize=(5.55, 5), colorbar="blue")
+    
+    # ROC Curve
+    RocCurveDisplay.from_estimator(Model_Abb, X_test, Y_test)  # Added Y_test here
+    plt.show()
+
+
+# %%
+# Grid Search Function
+
+def GridSearch(Model_Abb, Parameters, X_train, Y_train):
+    Grid = GridSearchCV(estimator=Model_Abb, param_grid = Parameters, cv = 3, n_jobs = -1)
+    Grid_Result = Grid.fit(X_train, Y_train)
+    Model_Name = Grid_Result.best_estimator_
+    
+    return (Model_Name)
+
+# %%
+# Logistic Fregression for binary classification
+
+LR = LogisticRegression()
+LR.fit(X_train_train , Y_train_train)
+
+# %%
+LR.score(X_train_train, Y_train_train), LR.score(X_test_train, Y_test_train)
+
+# %%
+Evaluate('Logistic Regression', LR, X_test_train, Y_test_train)
+
+# %%
+print(f"overrall score: {(0.859 + 0.916 + 0.808 + 0.858 + 0.916) / 5.0}")
+
+# %%
+# Decision Tree Classifier
+
+DT = DecisionTreeClassifier(max_features=6, max_depth=4)
+DT.fit(X_train_train, Y_train_train)
+
+# %%
+DT.score(X_train_train, Y_train_train), DT.score(X_test_train, Y_test_train)
+
+# %%
+Evaluate('Decision Tree Classifier', DT, X_test_train, Y_test_train)
+
+# %%
+print(f"overrall score: {(0.886 + 0.833 + 0.915 + 0.872 + 0.833) / 5.0}")
+
+# %%
+fig = plt.figure(figsize=(15,12))
+tree.plot_tree(DT, filled=True)
+
+# %%
+# Random Forest Classifier
+
+max_depth = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    
+Parameters = { 'max_depth': max_depth}
+
+# %%
+RF = RandomForestClassifier()
+GridSearch(RF, Parameters, X_train_train, Y_train_train)
+
+# %%
+RF.fit(X_train_train, Y_train_train)
+
+# %%
+RF.score(X_train_train, Y_train_train), RF.score(X_test_train, Y_test_train)
+
+# %%
+Evaluate('Random Forest Classifier', RF, X_test_train, Y_test_train)
+
+# %%
+print(f"overrall score: {(1.0 + 1.0 + 1.0 + 1.0 + 1.0) / 5.0}")
+
+# %%
+# KNN Algorithm with n = 6
+
+KNN = KNeighborsClassifier(n_neighbors=6) 
+KNN.fit(X_train_train, Y_train_train)
+
+# %%
+KNN.score(X_train_train, Y_train_train), KNN.score(X_test_train, Y_test_train)
+
+# %%
+Evaluate('KNN', KNN, X_test_train, Y_test_train)
+
+# %%
+print(f"overrall score: {(0.995 + 0.992 + 0.996 + 0.994 + 0.992) / 5.0}")
+
+# %%
+# export the best model (Random Forest Classifier
+
+with open('Random_Forest.pkl','wb') as f:
+    pickle.dump(RF,f)
+
+
