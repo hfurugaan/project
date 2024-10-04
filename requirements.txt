@@ -1,0 +1,9 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+seaborn
+statsmodels
+mlxtend
+ipykernel
+kaggle
