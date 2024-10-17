@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV/TXT Upload and Prediction</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            overflow-x: hidden;
+        }
+        .table-container {
+            max-width: 100%;
+            overflow-x: auto;
+        }
+        .loader-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+            display: none;
+        }
+        .loader {
+            border: 16px solid #f3f3f3;
+            border-top: 16px solid #3498db;
+            border-radius: 50%;
+            width: 120px;
+            height: 120px;
+            animation: spin 2s linear infinite;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        .prediction-column {
+            background-color: #e6f3ff !important;
+            font-weight: bold !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader-container" id="loader-container">
+        <div class="loader"></div>
+    </div>
+    <div class="container mt-5">
+        <h1>CSV/TXT Upload and Prediction</h1>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="file" class="form-label">Choose CSV or TXT file</label>
+                <input type="file" class="form-control" id="file" name="file" accept=".csv,.txt">
+            </div>
+            <button type="submit" class="btn btn-primary">Upload</button>
+        </form>
+        <div id="columns" class="mt-4"></div>
+        <div id="preview" class="mt-4 table-container"></div>
+        <button id="predict" class="btn btn-success mt-3" style="display: none;">Predict</button>
+        <div id="train_score" class="mt-4"></div>
+        <div id="test_score" class="mt-4"></div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            function showLoader() {
+                $('#loader-container').show();
+                centerLoader();
+            }
+
+            function hideLoader() {
+                $('#loader-container').hide();
+            }
+
+            function centerLoader() {
+                var windowHeight = $(window).height();
+                var windowWidth = $(window).width();
+                var loaderHeight = $('.loader').height();
+                var loaderWidth = $('.loader').width();
+
+                $('.loader').css({
+                    'top': (windowHeight / 2) - (loaderHeight / 2),
+                    'left': (windowWidth / 2) - (loaderWidth / 2)
+                });
+            }
+
+            $(window).on('resize', centerLoader);
+
+            $('#uploadForm').on('submit', function(e) {
+                e.preventDefault();
+                var formData = new FormData(this);
+                showLoader();
+                $.ajax({
+                    url: '/',
+                    type: 'POST',
+                    data: formData,
+                    success: function(data) {
+                        hideLoader();
+                        if (data.error) {
+                            alert(data.error);
+                        } else {
+                            $('#columns').html('<h3>Columns:</h3><p>' + data.columns.join(', ') + '</p>');
+                            $('#preview').html('<h3>Preview (First 10 rows):</h3>' + data.preview);
+                            $('#predict').show();
+                        }
+                    },
+                    error: function() {
+                        hideLoader();
+                        alert('An error occurred during file upload.');
+                    },
+                    cache: false,
+                    contentType: false,
+                    processData: false
+                });
+            });
+
+            $('#predict').on('click', function() {
+                var formData = new FormData($('#uploadForm')[0]);
+                showLoader();
+                $('#predict').prop('disabled', true);
+                $.ajax({
+                    url: '/predict',
+                    type: 'POST',
+                    data: formData,
+                    success: function(data) {
+                        hideLoader();
+                        if (data.error) {
+                            alert(data.error);
+                        } else {
+                            $('#train_score').html('<h3>Generation Complete!</h3>');
+                            
+                            // Append prediction column to the table
+                            var table = $('#previewTable');
+                            if (table.find('th.prediction-column').length === 0) {
+                                table.find('thead tr').append('<th class="prediction-column">Prediction</th>');
+                                table.find('tbody tr').each(function(index) {
+                                    $(this).append('<td class="prediction-column">' + data.predictions[index] + '</td>');
+                                });
+                            } else {
+                                table.find('tbody tr').each(function(index) {
+                                    $(this).find('td.prediction-column').text(data.predictions[index]);
+                                });
+                            }
+
+                            // Apply styling to the new column
+                            $('.prediction-column').css({
+                                'background-color': '#e6f3ff',
+                                'font-weight': 'bold'
+                            });
+                        }
+                        $('#predict').prop('disabled', false);
+                    },
+                    error: function() {
+                        hideLoader();
+                        alert('An error occurred during prediction.');
+                        $('#predict').prop('disabled', false);
+                    },
+                    cache: false,
+                    contentType: false,
+                    processData: false
+                });
+            });
+        });
+    </script>
+</body>
+</html>
