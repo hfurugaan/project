@@ -8,6 +8,6 @@ RUN pip install --no-cache-dir -r requirements_flask.txt
 
 COPY . .
 
-EXPOSE 5000
+EXPOSE 80
 
-CMD ["flask", "run", "--host=0.0.0.0"]
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "app:app"]
