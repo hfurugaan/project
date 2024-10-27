@@ -1,4 +1,3 @@
-import os
 from flask import Flask, request, render_template, jsonify
 import pandas as pd
 import numpy as np
@@ -6,6 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import RobustScaler
 import pickle
 from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import LabelEncoder
 
 app = Flask(__name__)
 
@@ -29,59 +29,43 @@ def prepare_nsl_kdd_data(train_path, test_path, validation_split=0.25, random_st
     test_df = pd.read_csv(test_path, sep=",", names=columns)
     
     # Classify attacks
-    train_df['attack_state'] = train_df.attack.map(lambda a: 0 if a == 'normal' else 1)
-    test_df['attack_state'] = test_df.attack.map(lambda a: 0 if a == 'normal' else 1)
+    Trained_attack = train_df.attack.map(lambda a: 0 if a == 'normal' else 1)
+    Tested_attack = test_df.attack.map(lambda a: 0 if a == 'normal' else 1)
+
+    train_df['attack_state'] = Trained_attack
+    test_df['attack_state'] = Tested_attack
     
     # One-hot encoding
-    categorical_columns = ['protocol_type', 'service', 'flag']
-    train_df_encoded = pd.get_dummies(train_df, columns=categorical_columns, prefix=categorical_columns, prefix_sep="_")
-    test_df_encoded = pd.get_dummies(test_df, columns=categorical_columns, prefix=categorical_columns, prefix_sep="_")
+    train_df = pd.get_dummies(train_df,columns=['protocol_type','service','flag'], prefix="", prefix_sep="")
+    test_df = pd.get_dummies(test_df,columns=['protocol_type','service','flag'],prefix="",prefix_sep="")
     
-    # Ensure both train and test have the same columns
-    all_columns = set(train_df_encoded.columns) | set(test_df_encoded.columns)
-    for col in all_columns:
-        if col not in train_df_encoded.columns:
-            train_df_encoded[col] = 0
-        if col not in test_df_encoded.columns:
-            test_df_encoded[col] = 0
+    LE = LabelEncoder()
+    attack_LE= LabelEncoder()
+    train_df['attack'] = attack_LE.fit_transform(train_df["attack"])
+    test_df['attack'] = attack_LE.fit_transform(test_df["attack"])
     
-    # Ensure columns are in the same order
-    train_df_encoded = train_df_encoded.reindex(sorted(train_df_encoded.columns), axis=1)
-    test_df_encoded = test_df_encoded.reindex(sorted(train_df_encoded.columns), axis=1)
+    # Data Splitting
+    X_train = train_df.drop(['attack', 'level', 'attack_state'], axis=1)
+    X_test = test_df.drop(['attack', 'level', 'attack_state'], axis=1)
+
+    Y_train = train_df['attack_state']
+    Y_test = test_df['attack_state']
     
-    # Prepare features and target
-    drop_columns = ['attack', 'level', 'attack_state']
-    X_train = train_df_encoded.drop(drop_columns, axis=1)
-    Y_train = train_df_encoded['attack_state']
-    X_test = test_df_encoded.drop(drop_columns, axis=1)
-    Y_test = test_df_encoded['attack_state']
+    X_train_train, X_test_train, Y_train_train, Y_test_train = train_test_split(X_train, Y_train, test_size= 0.25 , random_state=42)
+    X_train_test, X_test_test, Y_train_test, Y_test_test = train_test_split(X_test, Y_test, test_size= 0.25 , random_state=42)
     
-    # Add zero columns for missing features
-    current_feature_count = X_train.shape[1]
-    missing_feature_count = 124 - current_feature_count
+    # Data scaling
+    Ro_scaler = RobustScaler()
+    X_train_train = Ro_scaler.fit_transform(X_train_train) 
+    X_test_train= Ro_scaler.transform(X_test_train)
+    X_train_test = Ro_scaler.fit_transform(X_train_test) 
+    X_test_test= Ro_scaler.transform(X_test_test)
     
-    if missing_feature_count > 0:
-        for i in range(missing_feature_count):
-            column_name = f'added_feature_{i}'
-            X_train[column_name] = 0
-            X_test[column_name] = 0
+    X_train = X_train.astype(int)
+    X_test = X_test.astype(int)
     
-    # Ensure we have 124 features
-    assert X_train.shape[1] == 124, f"Expected 124 features, but got {X_train.shape[1]}"
-    assert X_test.shape[1] == 124, f"Expected 124 features, but got {X_test.shape[1]}"
-    
-    # Split training data into train and validation sets
-    X_train_train, X_test_train, Y_train_train, Y_test_train = train_test_split(X_train, Y_train, 
-                                                                                test_size=validation_split, 
-                                                                                random_state=random_state)
-    
-    # Scale the features
-    scaler = RobustScaler()
-    X_train_train_scaled = scaler.fit_transform(X_train_train)
-    X_test_train_scaled = scaler.transform(X_test_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    return (X_train_train_scaled, Y_train_train, X_test_train_scaled, Y_test_train, X_test_scaled, Y_test)
+    return (X_train_train, Y_train_train, X_test_train, Y_test_train, X_test, Y_test)
+
 
 def load_model_and_predict(model_path, X_train, Y_train, X_test, Y_test):
     # Load the model
@@ -148,7 +132,13 @@ def predict():
         X_train_train, Y_train_train, X_test_train, Y_test_train, X_test, Y_test = prepare_nsl_kdd_data("nsl-kdd-data/KDDTrain+.txt", upload_path)
         
         # Make predictions
-        train_score, test_score, train_pred_labels, test_pred_labels = load_model_and_predict(MODEL_PATH, X_train_train, Y_train_train, X_test, Y_test)
+        train_score, test_score, train_pred_labels, test_pred_labels = load_model_and_predict(
+            MODEL_PATH, 
+            X_train_train, 
+            Y_train_train, 
+            X_test_train, 
+            Y_test_train   
+        )
         
         # Prepare results
         predictions = test_pred_labels[:10].tolist()  # Get first 10 predictions
@@ -156,7 +146,7 @@ def predict():
         return jsonify({
             'predictions': predictions,
             'train_score': f"Training Score: {train_score:.4f}",
-            'test_score': f"Testing Score: {test_score:.4f}"
+            'test_score': f"Testing Score: {test_score:.4f}"  # This is actually the validation score
         })
     return jsonify({'error': 'Invalid file type. Please upload a .csv or .txt file.'})
 
